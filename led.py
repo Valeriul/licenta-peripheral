@@ -1,6 +1,8 @@
 from module import Control
 from ports import Port
 from machine import Pin, PWM
+import json
+import battery
 
 class Led(Control):
     def __init__(self, port):
@@ -23,7 +25,10 @@ class Led(Control):
 
 
     def get_state(self):
-        return f"Led state: {self.state:.2f}%"
+        return json.dumps({
+            "brightness": self.state,
+            "batteryLevel": battery.getBatteryPercentage()
+        })
     
     def __del__(self):
         self.set_state(0)

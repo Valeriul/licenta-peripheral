@@ -17,3 +17,13 @@ class Control(Module):
 
     def set_state(self, state):
         pass
+    
+from led import Led
+    
+class ModuleFactory:
+    @staticmethod
+    def create_module(module_type, port):
+        if module_type.lower() == Led.__name__.lower():
+            return Led(port)
+        else:
+            raise ValueError("Invalid module type")

@@ -1,7 +1,7 @@
 import uasyncio as asyncio
 import usocket as socket
 import json
-from module_manager import ModuleManager
+from module.module_manager import ModuleManager
 
 async def handle_client(reader, writer):
     try:

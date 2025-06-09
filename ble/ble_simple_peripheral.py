@@ -7,9 +7,9 @@
 
 import bluetooth
 import time
-import wifi_connect
+import wifi.wifi_connect as wifi_connect
 import random
-from ble_advertising import advertising_payload
+from ble.ble_advertising import advertising_payload
 
 from micropython import const
 
@@ -81,7 +81,7 @@ class BLESimplePeripheral:
         self._write_callback = callback
 
 
-def receive_credentials():
+async def receive_credentials():
     ble = bluetooth.BLE()
     p = BLESimplePeripheral(ble)
 

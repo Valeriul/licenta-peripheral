@@ -24,11 +24,14 @@ class Control(Module):
         pass
     
 from module.controls.led import Led
+from module.sensors.gas import GasSensor
     
 class ModuleFactory:
     @staticmethod
     def create_module(module_type, i2c_address):
         if module_type.lower() == Led.__name__.lower():
             return Led(i2c_address)
+        elif module_type.lower() == GasSensor.__name__.lower():
+            return GasSensor(i2c_address)
         else:
             raise ValueError("Invalid module type")

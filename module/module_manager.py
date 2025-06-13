@@ -20,7 +20,8 @@ class ModuleManager:
     
     # Dictionary to map I2C addresses to module types
     i2c_module_mapping = {
-        0x48: "Led",
+        0x49: "Led",
+        0x48: "GasSensor",
     }
     
     # I2C detection attributes
@@ -223,12 +224,12 @@ class ModuleManager:
                         i2c_address = module_info["i2c_address"]
 
                         try:
-                            module = ModuleFactory.create_module(module_type)
-                            module.i2c_address = i2c_address
+                            module = ModuleFactory.create_module(module_type, i2c_address)
+                            module.set_i2c(ModuleManager.i2c)  # ← Add this line
                             
                             ModuleManager.modules[uuid] = module
                             print(f"Loaded module: UUID={uuid}, Type={module_type}, I2C=0x{i2c_address:02x}")
-                            
+                                                
                         except Exception as e:
                             print(f"Error creating module {module_type} at I2C 0x{i2c_address:02x}: {e}")
                             continue
@@ -305,7 +306,8 @@ class ModuleManager:
                 return
                 
             try:
-                module = ModuleFactory.create_module(module_type,i2c_address)
+                module = ModuleFactory.create_module(module_type, i2c_address)
+                module.set_i2c(ModuleManager.i2c)  # ← Add this line
                 
                 uuid = ModuleManager.get_uuid(type(module).__name__)
                 ModuleManager.modules[uuid] = module
@@ -338,7 +340,7 @@ class ModuleManager:
         except Exception as e:
             history = {}
         
-        if history.get(module_type) is None:
+        if history and history.get(module_type) is None:
             history[module_type] = uuid
         
         try:
@@ -354,8 +356,8 @@ class ModuleManager:
                 history = json.load(f)
         except Exception as e:
             history = {}
-
-        if history.get(module_type) is not None:
+        
+        if isinstance(history, dict) and history and history.get(module_type) is not None:
             return history.get(module_type)
             
         uuid = generate_uuid()
@@ -423,4 +425,10 @@ class ModuleManager:
     @staticmethod
     def add_i2c_mapping(i2c_address, module_type):
         """Add a new I2C address to module type mapping."""
-        ModuleManager.i2c_module_mapping[i2c_address]
+        ModuleManager.i2c_module_mapping[i2c_address] = module_type
+        print(f"Added I2C mapping: 0x{i2c_address:02x} -> {module_type}")
+
+    @staticmethod
+    def get_i2c_mappings():
+        """Get all I2C address mappings."""
+        return ModuleManager.i2c_module_mapping.copy()

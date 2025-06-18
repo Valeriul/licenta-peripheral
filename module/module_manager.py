@@ -16,12 +16,13 @@ class ModuleManager:
     modules = {}
     _lock = allocate_lock()  # Lock for thread safety
     data_file = "modules.json"  # File to save module information
-    i2c_history_file = "i2c_history.json"  # File to save I2C history
     
     # Dictionary to map I2C addresses to module types
     i2c_module_mapping = {
-        0x49: "Led",
-        0x48: "GasSensor",
+        0x48: "TemperatureSensor",
+        0x4C: "GasSensor",
+        0x49: "Relay",
+        0x4A: "Led"
     }
     
     # I2C detection attributes
@@ -185,22 +186,89 @@ class ModuleManager:
         except Exception as e:
             print(f"❌ Manual scan failed: {e}")
             return []
+
+    @staticmethod
+    def _load_module_registry():
+        """Load the module registry from JSON file"""
+        try:
+            with open(ModuleManager.data_file, "r") as f:
+                data = json.load(f)
+                # Handle both old format (list) and new format (dict)
+                if isinstance(data, list):
+                    # Convert old format to new format
+                    registry = {
+                        "active_modules": data,
+                        "module_registry": {}
+                    }
+                    # Extract registry from active modules
+                    for module_info in data:
+                        module_type = module_info["module_type"]
+                        i2c_address = module_info["i2c_address"]
+                        uuid = module_info["uuid"]
+                        registry["module_registry"][f"{module_type}_{i2c_address}"] = uuid
+                    return registry
+                else:
+                    return data
+        except OSError:  # File doesn't exist in MicroPython
+            return {
+                "active_modules": [],
+                "module_registry": {}
+            }
+        except Exception as e:
+            print(f"Error loading module registry: {e}")
+            return {
+                "active_modules": [],
+                "module_registry": {}
+            }
+
+    @staticmethod
+    def _save_module_registry(registry):
+        """Save the module registry to JSON file"""
+        try:
+            with open(ModuleManager.data_file, "w") as f:
+                json.dump(registry, f)
+        except Exception as e:
+            print(f"Error saving module registry: {e}")
+
+    @staticmethod
+    def _get_or_create_uuid(module_type, i2c_address):
+        """Get existing UUID for module type+address or create new one"""
+        registry = ModuleManager._load_module_registry()
+        registry_key = f"{module_type}_{i2c_address}"
+        
+        # Check if we have a UUID for this module type and I2C address
+        if registry_key in registry["module_registry"]:
+            uuid = registry["module_registry"][registry_key]
+            print(f"🔄 Reusing existing UUID {uuid} for {module_type} at 0x{i2c_address:02x}")
+            return uuid
+        else:
+            # Create new UUID and save it
+            uuid = generate_uuid()
+            registry["module_registry"][registry_key] = uuid
+            ModuleManager._save_module_registry(registry)
+            print(f"🆕 Created new UUID {uuid} for {module_type} at 0x{i2c_address:02x}")
+            return uuid
         
     @staticmethod
     async def save_modules():
+        """Save active modules to file"""
+        print("Saving modules to file...")  # Debug
         try:
-            module_list = []
+            registry = ModuleManager._load_module_registry()
+            
+            # Update active modules list
+            active_modules = []
             for uuid, module in ModuleManager.modules.items():
                 print(f"Saving module: UUID={uuid}, Type={type(module).__name__}, I2C=0x{module.i2c_address:02x}")  # Debug
-                module_list.append({
+                active_modules.append({
                     "uuid": uuid,
                     "module_type": type(module).__name__,
                     "i2c_address": module.i2c_address
                 })
             
-            # Write the entire list as a JSON array
-            with open(ModuleManager.data_file, "w") as f:
-                json.dump(module_list, f)
+            registry["active_modules"] = active_modules
+            ModuleManager._save_module_registry(registry)
+            
             central_ip = ModuleManager.get_central_ip()
             await ModuleManager.refresh_modules_of_server(central_ip, 5002, "/rasberry/Peripheral/refreshPeripherals", ModuleManager.modules)
         except Exception as e:
@@ -216,29 +284,33 @@ class ModuleManager:
         """Load modules from a JSON file."""
         with ModuleManager._lock:
             try:
-                with open(ModuleManager.data_file, "r") as f:
-                    json_data = json.load(f)
-                    for module_info in json_data:
-                        uuid = module_info["uuid"]
-                        module_type = module_info["module_type"]
-                        i2c_address = module_info["i2c_address"]
+                registry = ModuleManager._load_module_registry()
+                active_modules = registry.get("active_modules", [])
+                
+                if not active_modules:
+                    print("No modules to load from file")
+                    return
+                
+                for module_info in active_modules:
+                    uuid = module_info["uuid"]
+                    module_type = module_info["module_type"]
+                    i2c_address = module_info["i2c_address"]
 
-                        try:
-                            module = ModuleFactory.create_module(module_type, i2c_address)
-                            module.set_i2c(ModuleManager.i2c)  # ← Add this line
-                            
-                            ModuleManager.modules[uuid] = module
-                            print(f"Loaded module: UUID={uuid}, Type={module_type}, I2C=0x{i2c_address:02x}")
-                                                
-                        except Exception as e:
-                            print(f"Error creating module {module_type} at I2C 0x{i2c_address:02x}: {e}")
-                            continue
+                    try:
+                        module = ModuleFactory.create_module(module_type, i2c_address)
+                        module.set_i2c(ModuleManager.i2c)
                         
+                        ModuleManager.modules[uuid] = module
+                        print(f"Loaded module: UUID={uuid}, Type={module_type}, I2C=0x{i2c_address:02x}")
+                                            
+                    except Exception as e:
+                        print(f"Error creating module {module_type} at I2C 0x{i2c_address:02x}: {e}")
+                        continue
+                    
                 central_ip = ModuleManager.get_central_ip()
                 await ModuleManager.refresh_modules_of_server(central_ip, 5002, "/rasberry/Peripheral/refreshPeripherals", ModuleManager.modules)
             except Exception as e:
                 print(f"Error loading modules: {e}")
- 
                 
     @staticmethod
     async def refresh_modules_of_server(host, port, endpoint, data):
@@ -306,64 +378,54 @@ class ModuleManager:
                 return
                 
             try:
-                module = ModuleFactory.create_module(module_type, i2c_address)
-                module.set_i2c(ModuleManager.i2c)  # ← Add this line
-                
-                uuid = ModuleManager.get_uuid(type(module).__name__)
+                module = ModuleFactory.create_module(module_type, ModuleManager.i2c, i2c_address)
+
+                # Get or create UUID for this module type and I2C address
+                uuid = ModuleManager._get_or_create_uuid(module_type, i2c_address)
                 ModuleManager.modules[uuid] = module
                 
-                print(f"Created module: {module_type} at I2C address 0x{i2c_address:02x}")
+                print(f"Created module: {module_type} at I2C address 0x{i2c_address:02x} with UUID {uuid}")
                 await ModuleManager.save_modules()
                 
             except Exception as e:
                 print(f"Error creating module for I2C address 0x{i2c_address:02x}: {e}")
 
     @staticmethod
-    async def create_module(module_type):
+    async def create_module(module_type, i2c_address=None):
         """Create a new module of the specified type (for manual creation)."""
         with ModuleManager._lock:
             try:
-                module = ModuleFactory.create_module(module_type)
-                uuid = ModuleManager.get_uuid(type(module).__name__)
+                if i2c_address is None:
+                    # Find an available I2C address for this module type
+                    for addr, mapped_type in ModuleManager.i2c_module_mapping.items():
+                        if mapped_type == module_type:
+                            # Check if address is already in use
+                            address_in_use = False
+                            for module in ModuleManager.modules.values():
+                                if hasattr(module, 'i2c_address') and module.i2c_address == addr:
+                                    address_in_use = True
+                                    break
+                            if not address_in_use:
+                                i2c_address = addr
+                                break
+                    
+                    if i2c_address is None:
+                        print(f"No available I2C address found for module type {module_type}")
+                        return None
+                
+                module = ModuleFactory.create_module(module_type, i2c_address)
+                module.set_i2c(ModuleManager.i2c)
+                
+                # Get or create UUID for this module type and I2C address
+                uuid = ModuleManager._get_or_create_uuid(module_type, i2c_address)
                 ModuleManager.modules[uuid] = module
+                
                 await ModuleManager.save_modules()
                 return module
             except Exception as e:
                 print(f"Error creating module {module_type}: {e}")
                 return None
                 
-    @staticmethod
-    def save_entry_to_history(module_type, uuid):
-        try:
-            with open(ModuleManager.i2c_history_file, "r") as f:
-                history = json.load(f)
-        except Exception as e:
-            history = {}
-        
-        if history and history.get(module_type) is None:
-            history[module_type] = uuid
-        
-        try:
-            with open(ModuleManager.i2c_history_file, "w") as f:
-                json.dump(history, f)
-        except Exception as e:
-            print(f"Error saving entry to history: {e}")
-
-    @staticmethod
-    def get_uuid(module_type):
-        try:
-            with open(ModuleManager.i2c_history_file, "r") as f:
-                history = json.load(f)
-        except Exception as e:
-            history = {}
-        
-        if isinstance(history, dict) and history and history.get(module_type) is not None:
-            return history.get(module_type)
-            
-        uuid = generate_uuid()
-        ModuleManager.save_entry_to_history(module_type, uuid)
-        return uuid
-        
     @staticmethod
     async def remove_module(uuid):
         """Remove a module by its UUID."""
@@ -432,3 +494,18 @@ class ModuleManager:
     def get_i2c_mappings():
         """Get all I2C address mappings."""
         return ModuleManager.i2c_module_mapping.copy()
+
+    @staticmethod
+    def get_module_registry():
+        """Get the complete module registry for debugging"""
+        return ModuleManager._load_module_registry()
+
+    @staticmethod
+    def clear_module_registry():
+        """Clear the module registry (for debugging/reset purposes)"""
+        registry = {
+            "active_modules": [],
+            "module_registry": {}
+        }
+        ModuleManager._save_module_registry(registry)
+        print("Module registry cleared")

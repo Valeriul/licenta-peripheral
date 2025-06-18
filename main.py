@@ -4,7 +4,8 @@ import wifi.wifi_connect as wifi_connect
 from module.module_manager import ModuleManager
 from wifi.http_server import start_server
 from ble.ble_simple_peripheral import receive_credentials
-from utils.simple_sawtooth import start_sawtooth, stop_sawtooth, set_sawtooth_voltage_range
+from utils.sawtooth import Sawtooth
+from machine import Pin
 
 async def main():
     ip_address = None
@@ -15,8 +16,13 @@ async def main():
             await receive_credentials()
     
     # Start sawtooth DAC
-    set_sawtooth_voltage_range(0.45, 2.95)
-    start_sawtooth(20000)  # 20kHz sawtooth on GP6-GP15
+    sawtooth = Sawtooth(frequency=120) #Set frequency to 1Hz
+    sawtooth.start()  # Start the sawtooth generator
+    
+    #Write HIGH to pins from gp6 to gp12
+    
+    for pin in range(6, 13):
+        Pin(pin, Pin.OUT).high()
 
     # Initialize I2C
     ModuleManager.initialize_i2c(scl_pin=5, sda_pin=4)

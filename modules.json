@@ -1,0 +1,1 @@
+{"module_registry": {"GasSensor_76": "7bbc40c7a81ebc5c", "Relay_73": "8b13fb06f535916b", "TemperatureSensor_72": "8c11c78d511fb961", "Led_74": "0e27e17b71beb3c0"}, "active_modules": [{"i2c_address": 72, "module_type": "TemperatureSensor", "uuid": "8c11c78d511fb961"}, {"i2c_address": 73, "module_type": "Relay", "uuid": "8b13fb06f535916b"}]}

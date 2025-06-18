@@ -3,10 +3,10 @@ import json
 import utils.battery as battery
 
 class GasSensor(Sensor):
-    def __init__(self, i2c_address):
-        super().__init__(i2c_address)
-        self.i2c = None  # Will be set by ModuleManager
-        self.i2c_address = i2c_address  # Will be set by ModuleManager
+    def __init__(self,i2c_instance,i2c_address):
+        super().__init__(i2c_instance,i2c_address)
+        self.i2c = i2c_instance
+        self.i2c_address = i2c_address
 
     def get_state(self):
         """Read gas sensor value and return as JSON"""

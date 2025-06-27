@@ -4,7 +4,7 @@ import wifi.wifi_connect as wifi_connect
 from module.module_manager import ModuleManager
 from wifi.http_server import start_server
 from ble.ble_simple_peripheral import receive_credentials
-from utils.sawtooth import Sawtooth
+from utils.sawtooth import init_sawtooth_thread
 from machine import Pin
 
 async def main():
@@ -15,14 +15,7 @@ async def main():
         except Exception as e:
             await receive_credentials()
     
-    # Start sawtooth DAC
-    sawtooth = Sawtooth(frequency=120) #Set frequency to 1Hz
-    sawtooth.start()  # Start the sawtooth generator
-    
-    #Write HIGH to pins from gp6 to gp12
-    
-    for pin in range(6, 13):
-        Pin(pin, Pin.OUT).high()
+    init_sawtooth_thread()
 
     # Initialize I2C
     ModuleManager.initialize_i2c(scl_pin=5, sda_pin=4)
@@ -40,5 +33,4 @@ async def main():
 try:
     asyncio.run(main())
 except KeyboardInterrupt:
-    stop_sawtooth()
     print("Execution stopped by user")

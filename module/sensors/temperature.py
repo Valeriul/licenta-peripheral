@@ -9,7 +9,6 @@ class TemperatureSensor(Sensor):
         self.i2c_address = i2c_address
 
     def get_state(self):
-        """Read temperature sensor value and return as JSON"""
         try:
             if self.i2c and self.i2c_address is not None:
                 # Read data from the LM75B temperature sensor
@@ -31,32 +30,18 @@ class TemperatureSensor(Sensor):
 
     def read_lm75b_temperature(self):
         """Read temperature from LM75B sensor"""
-        # LM75B register addresses
+
         TEMP_REGISTER = 0x00
         
-        # Write to temperature register (pointer register)
         self.i2c.writeto(self.i2c_address, bytes([TEMP_REGISTER]))
-        
-        # Read 2 bytes from temperature register
         data = self.i2c.readfrom(self.i2c_address, 2)
         
-        # Convert raw data to temperature
-        # LM75B returns 11-bit signed value in two bytes
-        # MSB contains upper 8 bits, LSB contains lower 3 bits in upper part
         raw_temp = (data[0] << 8) | data[1]
-        
-        # Extract 11-bit signed value (shift right by 5 to align)
         temp_raw = raw_temp >> 5
         
-        # Convert to signed 11-bit value
-        if temp_raw & 0x400:  # Check sign bit (bit 10)
-            temp_raw -= 0x800  # Convert from 2's complement
+        if temp_raw & 0x400:
+            temp_raw -= 0x800 
         
-        # Each LSB = 0.125°C
         temperature = temp_raw * 0.125
         
         return temperature
-
-    def set_i2c(self, i2c_instance):
-        """Set the I2C instance for communication"""
-        self.i2c = i2c_instance

@@ -19,10 +19,10 @@ class ModuleManager:
     
     # Dictionary to map I2C addresses to module types
     i2c_module_mapping = {
-        0x48: "TemperatureSensor",
+        0x48: "Relay",
         0x4C: "GasSensor",
-        0x49: "Relay",
-        0x4A: "Led"
+        0x49: "Led",
+        0x4F: "TemperatureSensor",
     }
     
     # I2C detection attributes
@@ -312,9 +312,9 @@ class ModuleManager:
             except Exception as e:
                 print(f"Error loading modules: {e}")
                 
-    @staticmethod
-    async def refresh_modules_of_server(host, port, endpoint, data):
-        """Sends an HTTP POST request using MicroPython's socket module."""
+    @staticmethod     
+    async def refresh_modules_of_server(host, port, endpoint, data, retry_count=0, max_retries=3):
+        """Sends an HTTP POST request using MicroPython's socket module with retry logic."""
         try:
             # Convert data to JSON string
             ip_address = wifi_connect.get_ip_address() + ":8080"
@@ -330,8 +330,7 @@ class ModuleManager:
             print(f"Sending POST request to {host}:{port}{endpoint} with data: {json_data}")  # Debug
 
             json_data = json.dumps(json_data)
-
-            
+                            
             # Create a socket connection
             addr = socket.getaddrinfo(host, port)[0][-1]
             s = socket.socket()
@@ -357,9 +356,38 @@ class ModuleManager:
 
             # Close the socket
             s.close()
+            
+            # Reset retry count on success
+            return True
 
         except Exception as e:
-            print(f"❌ POST request failed: {e}")
+            print(f"❌ POST request failed (attempt {retry_count + 1}/{max_retries}): {e}")
+            
+            if retry_count < max_retries - 1:
+                # Retry if we haven't reached max attempts
+                print(f"Retrying in 2 seconds...")
+                await asyncio.sleep(2)  # Wait before retry
+                return await ModuleManager.refresh_modules_of_server(host, port, endpoint, data, retry_count + 1, max_retries)
+            else:
+                # Max retries reached - delete wifi credentials and restart
+                print(f"❌ Max retries ({max_retries}) reached. Deleting wifi_credentials.json and restarting...")
+                try:
+                    import os
+                    os.remove('wifi_credentials.json')
+                    print("✅ wifi_credentials.json deleted")
+                except OSError as delete_error:
+                    print(f"⚠️ Could not delete wifi_credentials.json: {delete_error}")
+                
+                # Restart the main program
+                print("🔄 Restarting main program...")
+                import machine
+                machine.reset()  # Hard reset for MicroPython
+                
+                # Alternative soft restart approach if machine.reset() doesn't work:
+                # import sys
+                # sys.exit()  # This would exit current execution
+                
+                return False
 
     @staticmethod
     async def create_module_by_i2c_address(i2c_address):

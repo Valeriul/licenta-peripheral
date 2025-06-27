@@ -80,7 +80,6 @@ class BLESimplePeripheral:
     def on_write(self, callback):
         self._write_callback = callback
 
-
 async def receive_credentials():
     ble = bluetooth.BLE()
     p = BLESimplePeripheral(ble)
@@ -89,33 +88,76 @@ async def receive_credentials():
     ssid = None
     password = None
     central_ip = None
+    
+    # Buffer to accumulate chunked messages
+    message_buffer = bytearray()
 
     def on_rx(v):
         """Handles incoming BLE messages and stores data."""
-        print("Received:", v)
-
+        nonlocal ssid, password, central_ip, stop, message_buffer
+        
+        print(f"Received chunk: {v}")
+        print(f"Chunk length: {len(v)} bytes")
+        
         try:
-            # Decode bytes and split the message
-            label, content = v.decode().strip().split(":", 1)
+            # Add this chunk to the buffer
+            message_buffer.extend(v)
+            
+            # Try to process complete messages from buffer
+            while True:
+                try:
+                    # Convert buffer to string to check for complete messages
+                    buffer_str = message_buffer.decode('utf-8')
+                except UnicodeDecodeError:
+                    # Incomplete UTF-8 sequence, wait for more data
+                    print("Waiting for more data (incomplete UTF-8)")
+                    break
+                
+                # Look for newline (end of message)
+                newline_pos = buffer_str.find('\n')
+                if newline_pos == -1:
+                    # No complete message yet
+                    print(f"Buffering... current buffer: {len(message_buffer)} bytes")
+                    break
+                
+                # Extract complete message
+                complete_message = buffer_str[:newline_pos]
+                print(f"Complete message: '{complete_message}'")
+                print(f"Message length: {len(complete_message)} chars")
+                
+                # Remove processed message from buffer
+                bytes_processed = len(complete_message.encode('utf-8')) + 1  # +1 for newline
+                message_buffer = message_buffer[bytes_processed:]
+                
+                # Process the complete message
+                if ':' not in complete_message:
+                    print("Invalid message format (no colon)")
+                    continue
+                
+                label, content = complete_message.split(":", 1)
+                print(f"Label: '{label}', Content: '{content}' (length: {len(content)})")
 
-            # Ensure we access the variables from the outer scope
-            nonlocal ssid, password, central_ip, stop
+                # Store received values
+                if label == "SSID":
+                    ssid = content
+                    print(f"✅ SSID set: '{ssid}'")
+                elif label == "PASSWORD":
+                    password = content
+                    print(f"✅ PASSWORD set: length {len(password)}")
+                elif label == "IP":
+                    central_ip = content
+                    print(f"✅ IP set: '{central_ip}'")
 
-            # Store received values
-            if label == "SSID":
-                ssid = content.strip()
-            elif label == "PASSWORD":
-                password = content.strip()
-            elif label == "IP":
-                central_ip = content.strip()
-
-            # Check if all values are received
-            if ssid and password and central_ip:
-                stop = True
+                # Check if all values are received
+                if ssid and password and central_ip:
+                    print("🎉 All credentials received!")
+                    stop = True
+                    break
 
         except Exception as e:
             print(f"Error processing received data: {e}")
-
+            # Clear buffer on error to prevent corruption
+            message_buffer = bytearray()
 
     p.on_write(on_rx)
 
@@ -124,5 +166,10 @@ async def receive_credentials():
         time.sleep_ms(100)  # Block until data is received
         
     ble.active(False)
+    
+    print(f"Final credentials:")
+    print(f"SSID: '{ssid}' ({len(ssid) if ssid else 0} chars)")
+    print(f"Password: {len(password) if password else 0} chars")
+    print(f"IP: '{central_ip}' ({len(central_ip) if central_ip else 0} chars)")
     
     wifi_connect.write_credentials(ssid, password, central_ip)

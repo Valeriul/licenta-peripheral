@@ -10,17 +10,15 @@ class Relay(Control):
         self.set_state(0)
 
     def set_state(self, state):
-        """Set relay state by sending high/low command over I2C"""
-        # Convert to boolean and set full 8 bits (255) for high, 0 for low
-        relay_value = 255 if state else 0
-        state_text = "HIGH" if state else "LOW"
-        
-        print(f"🔌 RELAY: Setting state to {state_text} (0x{relay_value:02X})")
+        if state == 'HIGH' or state == 1:
+            relay_value = 255
+            self.state = 1
+        elif state == 'LOW' or state == 0:
+            relay_value = 0
+            self.state = 0
         try:
-            self.state = 1 if state else 0
             
             if self.i2c and self.i2c_address is not None:
-                # Send command: [CMD_SET_RELAY, relay_value] where relay_value is 255 or 0
                 data = bytes([0x50, relay_value])
                 self.i2c.writeto(self.i2c_address, data)                
             else:
